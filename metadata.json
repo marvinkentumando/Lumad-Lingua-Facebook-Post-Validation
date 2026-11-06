@@ -1,0 +1,7 @@
+{
+  "name": "Lumad Lingua - Mansaka Sentiment Validation Studio",
+  "description": "A working web application for reviewing Mansaka Facebook candidate posts and collecting human-validated sentiment labels.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

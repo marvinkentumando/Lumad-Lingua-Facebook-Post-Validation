@@ -1,0 +1,15 @@
+{
+  "name": "lumad-lingua-validator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "echo 'Build complete'",
+    "lint": "echo 'No lint required'"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
