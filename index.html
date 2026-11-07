@@ -143,10 +143,74 @@
    });
  }
    window.addEventListener('DOMContentLoaded',()=>{
-    const el=document.querySelector('.side-info .tiny');if(el)el.textContent='Stored securely on server';
+    const el=document.querySelector('.side-info .tiny');if(el)el.textContent='Firebase Firestore connected';
   });
 })();
-</script><script>
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDocs, collection, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const OperationType = {
+  CREATE: 'create',
+  UPDATE: 'update',
+  DELETE: 'delete',
+  LIST: 'list',
+  GET: 'get',
+  WRITE: 'write',
+};
+
+function handleFirestoreError(error, operationType, path) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {},
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+async function initFirebase() {
+  try {
+    const res = await fetch('/firebase-applet-config.json');
+    if (!res.ok) return;
+    const config = await res.json();
+    if (!config.projectId || config.projectId.includes('remixed-project-id')) return;
+
+    const app = initializeApp(config);
+    const db = getFirestore(app, config.firestoreDatabaseId);
+
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Please check your Firebase configuration.");
+      }
+    }
+
+    window.firebaseFirestoreDb = db;
+    window.handleFirestoreError = handleFirestoreError;
+    window.OperationType = OperationType;
+
+    try {
+      const snap = await getDocs(collection(db, 'validations'));
+      const firestoreValidations = {};
+      snap.forEach(docSnap => {
+        firestoreValidations[docSnap.id] = docSnap.data();
+      });
+      window.firestoreValidations = firestoreValidations;
+    } catch (err) {
+      console.warn('Initial Firestore query notice:', err);
+    }
+  } catch (e) {
+    console.error('Firebase init error:', e);
+  }
+}
+
+window.initFirebasePromise = initFirebase();
+</script>
+<script>
 'use strict';
 const state = {posts: [], index: 0, view: 'dashboard', textMode: 'original', saving: false};
 const $ = id => document.getElementById(id);
@@ -171,6 +235,22 @@ function showWorkspace(){show($('loading'),false);show($('login'),true);show($('
 async function loadPosts(){
   const data = await api('/api/posts');
   state.posts = data.posts || [];
+  if (window.initFirebasePromise) {
+    await window.initFirebasePromise;
+  }
+  if (window.firestoreValidations) {
+    for (const p of state.posts) {
+      const item = window.firestoreValidations[p.research_post_id];
+      if (item) {
+        p.human_language = item.human_language || p.human_language;
+        p.human_sentiment = item.sentiment || p.human_sentiment;
+        p.human_notes = item.notes || p.human_notes;
+        p.human_status = item.status || p.human_status;
+        p.validated_at = item.updated_at || p.validated_at;
+        p.revision = item.revision || p.revision;
+      }
+    }
+  }
   refreshOverview();
   renderQueue();
   updateNavPending();
@@ -341,8 +421,32 @@ async function saveValidation({next=false, skip=false}={}){
   try{
     const saved = await api('/api/validation', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({post_id: p.research_post_id, language, sentiment, notes, skip})});
     Object.assign(p, {human_language: saved.language, human_sentiment: saved.sentiment, human_notes: saved.notes, human_status: saved.status, validated_at: saved.validated_at, revision: saved.revision});
+
+    if (window.firebaseFirestoreDb) {
+      try {
+        const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        const valRef = doc(window.firebaseFirestoreDb, 'validations', p.research_post_id);
+        const valData = {
+          post_id: p.research_post_id,
+          human_language: saved.language || null,
+          sentiment: saved.sentiment || null,
+          notes: saved.notes || '',
+          status: saved.status,
+          updated_at: saved.validated_at,
+          revision: saved.revision
+        };
+        await setDoc(valRef, valData);
+      } catch (fErr) {
+        if (window.handleFirestoreError && window.OperationType) {
+          window.handleFirestoreError(fErr, window.OperationType.WRITE, `validations/${p.research_post_id}`);
+        } else {
+          console.error("Firestore write error:", fErr);
+        }
+      }
+    }
+
     refreshOverview();
-    toast(skip ? 'Post skipped and marked for later.' : 'Human review saved successfully.');
+    toast(skip ? 'Post skipped and synced to Firebase.' : 'Human review saved to Firebase database!');
     if(next){
       nextPending();
     } else {

@@ -2,9 +2,32 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { initializeApp as initServerFirebase } from 'firebase/app';
+import { getFirestore as getServerFirestore, doc as serverDoc, setDoc as serverSetDoc } from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let firebaseConfig = {};
+try {
+  const cfgPath = path.join(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  }
+} catch (e) {
+  console.error('Error reading firebase-applet-config.json:', e);
+}
+
+let serverDb = null;
+if (firebaseConfig && firebaseConfig.projectId && !firebaseConfig.projectId.includes('remixed-project-id')) {
+  try {
+    const serverApp = initServerFirebase(firebaseConfig, 'serverApp');
+    serverDb = getServerFirestore(serverApp, firebaseConfig.firestoreDatabaseId);
+    console.log(`Connected server to Firestore database: ${firebaseConfig.firestoreDatabaseId}`);
+  } catch (err) {
+    console.error('Firebase server init error:', err.message);
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +96,10 @@ try {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+app.get('/firebase-applet-config.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'firebase-applet-config.json'));
+});
+
 app.get('/api/session', (req, res) => {
   res.json({ authenticated: true, offline: false });
 });
@@ -107,7 +134,7 @@ app.get('/api/posts', (req, res) => {
   res.json({ posts: getCombinedPosts() });
 });
 
-app.post('/api/validation', (req, res) => {
+app.post('/api/validation', async (req, res) => {
   const body = req.body || {};
   const pid = String(body.post_id || '').trim();
   const items = getCombinedPosts();
@@ -166,6 +193,24 @@ app.post('/api/validation', (req, res) => {
     changed_at: updated_at
   });
   saveJson(HISTORY_FILE, history);
+
+  if (serverDb) {
+    try {
+      const vRef = serverDoc(serverDb, 'validations', pid);
+      await serverSetDoc(vRef, {
+        post_id: pid,
+        human_language: lang || null,
+        sentiment: sentiment || null,
+        notes,
+        status,
+        updated_at,
+        revision
+      });
+      console.log(`Saved validation ${pid} to Firestore collection /validations`);
+    } catch (fsErr) {
+      console.error(`Firestore save error for ${pid}:`, fsErr.message);
+    }
+  }
 
   res.json({
     ok: true,
