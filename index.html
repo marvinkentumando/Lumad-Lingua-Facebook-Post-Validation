@@ -494,7 +494,7 @@ async function exportCsv(mode){
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = ({training: 'lumad_lingua_validated_training.csv', all: 'lumad_lingua_full_reviewed_dataset.csv', history: 'lumad_lingua_validation_history.csv'})[mode] || 'export.csv';
+    a.download = ({training: 'valimansaka_human_validated_ml_ready.csv', all: 'lumad_lingua_full_reviewed_dataset.csv', history: 'lumad_lingua_validation_history.csv'})[mode] || 'export.csv';
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     toast('CSV export prepared.');

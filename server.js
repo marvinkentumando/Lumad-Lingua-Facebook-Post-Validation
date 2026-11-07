@@ -112,6 +112,46 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+async function getCombinedPostsAsync() {
+  const validations = loadJson(ANNOTATIONS_FILE, {});
+  if (serverDb) {
+    try {
+      const { getDocs, collection } = await import('firebase/firestore');
+      const snap = await getDocs(collection(serverDb, 'validations'));
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data && data.post_id) {
+          validations[data.post_id] = {
+            human_language: data.human_language || null,
+            sentiment: data.sentiment || null,
+            notes: data.notes || '',
+            status: data.status || 'pending',
+            updated_at: data.updated_at || null,
+            revision: data.revision || 0
+          };
+        }
+      });
+    } catch (e) {
+      console.warn('Firestore fetch notice in getCombinedPostsAsync:', e.message);
+    }
+  }
+
+  const imports = loadJson(IMPORTS_FILE, []);
+  const allPosts = [...seedPosts, ...imports];
+  return allPosts.map(row => {
+    const item = validations[row.research_post_id];
+    return {
+      ...row,
+      human_language: item?.human_language || null,
+      human_sentiment: item?.sentiment || null,
+      human_notes: item?.notes || '',
+      human_status: item?.status || 'pending',
+      validated_at: item?.updated_at || null,
+      revision: item?.revision || 0
+    };
+  });
+}
+
 function getCombinedPosts() {
   const validations = loadJson(ANNOTATIONS_FILE, {});
   const imports = loadJson(IMPORTS_FILE, []);
@@ -130,8 +170,9 @@ function getCombinedPosts() {
   });
 }
 
-app.get('/api/posts', (req, res) => {
-  res.json({ posts: getCombinedPosts() });
+app.get('/api/posts', async (req, res) => {
+  const posts = await getCombinedPostsAsync();
+  res.json({ posts });
 });
 
 app.post('/api/validation', async (req, res) => {
@@ -296,9 +337,9 @@ app.post('/api/import', (req, res) => {
   }
 });
 
-app.get('/api/export', (req, res) => {
+app.get('/api/export', async (req, res) => {
   const mode = req.query.mode || 'training';
-  const items = getCombinedPosts();
+  const items = await getCombinedPostsAsync();
 
   const quote = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const toCsv = (rows, cols) => '\ufeff' + cols.map(quote).join(',') + '\r\n' + rows.map(row => cols.map(c => quote(row[c])).join(',')).join('\r\n') + '\r\n';
@@ -312,19 +353,33 @@ app.get('/api/export', (req, res) => {
     csvContent = toCsv(history, cols);
     filename = 'lumad_lingua_validation_history.csv';
   } else if (mode === 'training') {
-    const cols = ['research_post_id', 'cleaned_text', 'anonymized_text', 'sentiment_label', 'language_verified', 'validated_at'];
+    const cols = ['research_post_id', 'model_ready_text', 'sentiment_label', 'language_classification', 'label_source', 'validator_id', 'reviewed_at_utc'];
     const validItems = items
       .filter(r => r.human_status === 'validated' && ['mansaka', 'mixed'].includes(r.human_language) && ['Positive', 'Negative', 'Neutral'].includes(r.human_sentiment))
-      .map(r => ({
-        research_post_id: r.research_post_id,
-        cleaned_text: r.cleaned_text,
-        anonymized_text: r.anonymized_text,
-        sentiment_label: r.human_sentiment,
-        language_verified: r.human_language,
-        validated_at: r.validated_at
-      }));
+      .map(r => {
+        const langMap = {
+          mansaka: 'Verified Mansaka',
+          mixed: 'Mixed Mansaka'
+        };
+        let isoUtc = '';
+        try {
+          const rawTs = r.validated_at || r.updated_at;
+          isoUtc = rawTs ? new Date(rawTs).toISOString() : new Date().toISOString();
+        } catch (e) {
+          isoUtc = new Date().toISOString();
+        }
+        return {
+          research_post_id: r.research_post_id,
+          model_ready_text: String(r.cleaned_text || r.anonymized_text || '').toLowerCase().trim(),
+          sentiment_label: r.human_sentiment,
+          language_classification: langMap[r.human_language] || 'Verified Mansaka',
+          label_source: 'human_validated',
+          validator_id: 'validator_01',
+          reviewed_at_utc: isoUtc
+        };
+      });
     csvContent = toCsv(validItems, cols);
-    filename = 'lumad_lingua_validated_training.csv';
+    filename = 'valimansaka_human_validated_ml_ready.csv';
   } else {
     const originalCols = items.length > 0 ? Object.keys(items[0]).filter(k => !['human_language', 'human_sentiment', 'human_notes', 'human_status', 'validated_at', 'revision'].includes(k)) : ['research_post_id'];
     const cols = [...originalCols, 'human_language_label', 'human_sentiment_label', 'validation_notes', 'human_review_status', 'validated_at', 'review_revision'];
