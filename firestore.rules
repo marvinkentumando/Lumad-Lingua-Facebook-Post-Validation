@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isValidId(id) {
+      return id is string && id.size() <= 200 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll(['research_post_id', 'cleaned_text']) &&
+             data.keys().hasOnly(['research_post_id', 'cleaned_text', 'anonymized_text', 'source_category', 'language_classification', 'language_confidence', 'confidence_scale', 'mansaka_matching_evidence', 'supporting_linguistic_sources', 'grammar_evidence', 'competing_language_evidence', 'reason_for_classification', 'pii_redaction_status', 'privacy_review_status', 'language_review_status', 'inclusion_decision', 'exclusion_reason', 'duplicate_of', 'provisional_sentiment_label', 'sentiment_confidence', 'sentiment_validation_status', 'ai_reviewed_sentiment', 'ai_sentiment_confidence', 'ai_review_justification', 'sentiment_review_priority', 'sentiment_review_status', 'gold_label_available']) &&
+             data.research_post_id is string && data.research_post_id.size() <= 200 &&
+             data.cleaned_text is string && data.cleaned_text.size() <= 100000;
+    }
+
+    function isValidValidation(data) {
+      return data.keys().hasAll(['post_id', 'status']) &&
+             data.keys().hasOnly(['post_id', 'human_language', 'sentiment', 'notes', 'status', 'updated_at', 'revision']) &&
+             data.post_id is string && data.post_id.size() <= 200 &&
+             data.status is string && data.status.size() <= 50 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000));
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create, update: if isValidId(postId) && isValidPost(request.resource.data);
+      allow delete: if isValidId(postId);
+    }
+
+    match /validations/{postId} {
+      allow read: if true;
+      allow create, update: if isValidId(postId) && isValidValidation(request.resource.data);
+      allow delete: if isValidId(postId);
+    }
+  }
+}

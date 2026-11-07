@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "Post": {
+      "title": "Post",
+      "description": "Mansaka Facebook candidate post",
+      "type": "object",
+      "properties": {
+        "research_post_id": { "type": "string", "maxLength": 200 },
+        "anonymized_text": { "type": "string", "maxLength": 100000 },
+        "cleaned_text": { "type": "string", "maxLength": 100000 },
+        "source_category": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["research_post_id", "cleaned_text"]
+    },
+    "Validation": {
+      "title": "Validation",
+      "description": "Human review and sentiment annotation",
+      "type": "object",
+      "properties": {
+        "post_id": { "type": "string", "maxLength": 200 },
+        "human_language": { "type": "string", "maxLength": 50 },
+        "sentiment": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 5000 },
+        "status": { "type": "string", "maxLength": 50 },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "revision": { "type": "integer" }
+      },
+      "required": ["post_id", "status"]
+    }
+  },
+  "firestore": {
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Posts collection"
+    },
+    "/validations/{postId}": {
+      "schema": { "$ref": "#/entities/Validation" },
+      "description": "Validations collection"
+    }
+  }
+}
