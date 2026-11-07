@@ -10,9 +10,29 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-const DATA_DIR = process.env.LL_DATA_DIR || path.join(__dirname, '.data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+let DATA_DIR = process.env.LL_DATA_DIR;
+if (!DATA_DIR) {
+  if (process.env.VERCEL) {
+    DATA_DIR = path.join('/tmp', '.data');
+  } else {
+    DATA_DIR = path.join(__dirname, '.data');
+  }
+}
+
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn(`Could not create ${DATA_DIR}, falling back to /tmp/.data:`, err.message);
+  DATA_DIR = path.join('/tmp', '.data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (e) {
+    console.error('Failed to create fallback directory in /tmp:', e.message);
+  }
 }
 
 const ANNOTATIONS_FILE = path.join(DATA_DIR, 'annotations.json');
@@ -284,6 +304,10 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Lumad Lingua Validator server running at http://${HOST}:${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Lumad Lingua Validator server running at http://${HOST}:${PORT}`);
+  });
+}
+
+export default app;
